@@ -1,9 +1,10 @@
 import json
 import time
 import random
+import requests
 from PyQt5.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget, QPushButton
 from PyQt5.QtGui import QPixmap, QMovie
-from PyQt5.QtCore import Qt, QTimer, QSize
+from PyQt5.QtCore import Qt, QTimer
 import paho.mqtt.client as mqtt
 
 POND_NAME = "Honey Lemon"
@@ -11,27 +12,19 @@ MQTT_SERVER = "40.90.169.126"
 MQTT_PORT = 1883
 MQTT_USERNAME = "dc24"
 MQTT_PASSWORD = "kmitl-dc24"
+IMG_URL = "https://drive.google.com/file/d/1iASslBb95ngJvUSawuMpq-erXS1j3ZE4/view?usp=drive_link"
 
 class Fish:
-    def __init__(self, name, genesis_pond, remaining_lifetime):
+    def __init__(self, name, genesis_pond, remaining_lifetime, gif_path):
         self.name = name
         self.genesis_pond = genesis_pond
-        self.postures = None
         self.remaining_lifetime = remaining_lifetime
-        self.current_posture = 0
+        self.gif_path = gif_path
         self.position = (random.randint(0, 550), random.randint(0, 350))  # Initial random position within pond
 
     def age(self):
         if self.remaining_lifetime > 0:
             self.remaining_lifetime -= 1
-
-    def move(self):
-        x, y = self.position
-        dx = random.choice([-50, 0, 50])  # Small movement in x direction
-        dy = random.choice([-50, 0, 50])  # Small movement in y direction
-        new_x = max(0, min(x + dx, 550))  # Ensure fish stays within pond bounds
-        new_y = max(0, min(y + dy, 350))  # Ensure fish stays within pond bounds
-        self.position = (new_x, new_y)
 
 class Pond:
     def __init__(self, name):
@@ -48,15 +41,15 @@ class Pond:
     def on_connect(self, client, userdata, flags, rc):
         print(f"Connected to MQTT server with result code {rc}")
         self.client.subscribe(f"fishhaven/stream")
-        self.client.subscribe(f"fishhaven/send")
+        self.client.subscribe(f"user/Honey Lemon")
 
     def on_message(self, client, userdata, msg):
         message = json.loads(msg.payload)
         print(f"Received message: {message}")
         if message["type"] == "hello":
             print(f"Hello message received from {message['sender']} at {message['timestamp']}")
-        elif message["type"] == "fish_move":
-            self.add_fish(Fish(message["fish_name"], message["group_name"], message["lifetime"]))
+        elif message["type"] == "image_sequence":
+            self.add_fish(Fish(f"{message['sender']}'s Fish", message['sender'], message['timestamp'], message['data']['gif_path']))
 
     def announce(self):
         message = {
@@ -76,17 +69,17 @@ class Pond:
         self.fish_list.remove(fish)
         print(f"Removed fish {fish.name} from pond {self.name}")
 
-    def move_fish(self, fish):
+    def move_fish(self, fish, gif_path, username):
         message = {
-            "type": "fish_move",
-            "fish_name": fish.name,
-            "group_name": fish.genesis_pond,
-            "postures": fish.postures,
-            "lifetime": fish.remaining_lifetime,
-            "timestamp": int(time.time())
+            "type": "image_sequence",
+            "sender": fish.genesis_pond,
+            "timestamp": fish.remaining_lifetime,
+            "data": {
+                "gif_path": gif_path
+            }
         }
-        # self.client.publish("fishhaven/send", json.dumps(message))
-        print(f"Fish sent: {message}")
+        self.client.publish(f"user/{username}", json.dumps(message))
+        print(f"Sending fish to {username}: {message}")
         self.remove_fish(fish)
 
     def update(self):
@@ -95,9 +88,7 @@ class Pond:
             if fish.remaining_lifetime <= 0:
                 self.remove_fish(fish)
             elif len(self.fish_list) > self.threshold or random.random() < 0.1:
-                self.move_fish(fish)
-            else:
-                fish.move()
+                self.move_fish(fish, IMG_URL, "Test")
 
 class PondUI(QMainWindow):
     def __init__(self, pond):
@@ -137,7 +128,7 @@ class PondUI(QMainWindow):
         self.timer.start(1000)  # Update every 1 second
 
     def add_fish(self):
-        fish = Fish(f"Fish{len(self.pond.fish_list) + 1}", self.pond.name, 15)
+        fish = Fish(f"Fish{len(self.pond.fish_list) + 1}", self.pond.name, 15, IMG_URL)
         self.pond.add_fish(fish)
         self.update_fish_display()
 
@@ -149,32 +140,67 @@ class PondUI(QMainWindow):
 
         # Add new fish labels
         for fish in self.pond.fish_list:
-            fish_label = QLabel(self.pond_image)
-            movie = QMovie(fish.genesis_pond)
-            movie.start()
+            # Download the GIF file locally
+            gif_local_path = download_gif(fish.gif_path)
 
-            # Get original GIF size
-            original_size = movie.frameRect().size()
-            width, height = original_size.width(), original_size.height()
+            if gif_local_path:
+                movie = QMovie(gif_local_path)  # Load from local file
+                movie.start()
 
-            # Compute scaling factor to fit within 200x200 without distortion
-            scale_factor = min(200 / width, 200 / height, 1)  # Ensure it does not upscale
-            new_width, new_height = int(width * scale_factor), int(height * scale_factor)
+                # Set up fish label without scaling
+                fish_label = QLabel(self.pond_image)
+                fish_label.setMovie(movie)
 
-            # Apply the scaled size to the movie
-            movie.setScaledSize(QSize(new_width, new_height))
+                # Check if the movie's frame is valid
+                if movie.frameRect().isNull():
+                    print("Warning: The movie's frame is null. GIF might not be loaded properly.")
+                else:
+                    print(f"Successfully loaded GIF from {gif_local_path}")
 
-            # Set up fish label
-            fish_label.setMovie(movie)
-            x, y = fish.position
-            fish_label.setGeometry(x, y, new_width, new_height)
-            fish_label.show()
-            self.fish_labels.append(fish_label)
-
+                x, y = fish.position
+                fish_label.setGeometry(x, y, movie.frameRect().width(), movie.frameRect().height())
+                fish_label.show()
+                self.fish_labels.append(fish_label)
 
     def update_pond(self):
+        previous_fish_count = len(self.pond.fish_list)
+        
         self.pond.update()
-        self.update_fish_display()
+        
+        # Only update the display if the number of fish has changed
+        if len(self.pond.fish_list) != previous_fish_count:
+            self.update_fish_display()
+
+def convert_drive_link_to_direct_url(drive_link):
+    # Extract the file ID from the original Google Drive link
+    file_id = drive_link.split('/d/')[1].split('/')[0]
+    
+    # Construct the direct download URL using the file ID
+    direct_url = f"https://drive.google.com/uc?id={file_id}"
+    
+    return direct_url
+
+def download_gif(google_drive_url):
+    direct_url = convert_drive_link_to_direct_url(google_drive_url)
+    file_id = direct_url.split('=')[-1]
+    download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+    local_file = f"/tmp/{file_id}.gif"  # Temporary path for downloaded file
+
+    try:
+        # Send GET request to download the file
+        response = requests.get(download_url, stream=True)
+        response.raise_for_status()
+
+        # Write content to local file
+        with open(local_file, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=128):
+                f.write(chunk)
+        
+        print(f"Downloaded GIF to {local_file}")
+        return local_file
+    except requests.exceptions.RequestException as e:
+        print(f"Error downloading GIF: {e}")
+        return None
 
 if __name__ == "__main__":
     app = QApplication([])
