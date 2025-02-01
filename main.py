@@ -4,7 +4,7 @@ import random
 import requests
 from PyQt5.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget, QPushButton
 from PyQt5.QtGui import QPixmap, QMovie
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QSize
 import paho.mqtt.client as mqtt
 
 POND_NAME = "Honey Lemon"
@@ -159,18 +159,19 @@ class PondUI(QMainWindow):
                 movie = QMovie(gif_local_path)  # Load from local file
                 movie.start()
 
-                # Set up fish label without scaling
+                # Set the scaled size of the GIF to 200x200
+                movie.setScaledSize(QSize(200, 200))
+
+                # Set up fish label
                 fish_label = QLabel(self.pond_image)
                 fish_label.setMovie(movie)
 
                 # Check if the movie's frame is valid
                 if movie.frameRect().isNull():
                     print("Warning: The movie's frame is null. GIF might not be loaded properly.")
-                else:
-                    print(f"Successfully loaded GIF from {gif_local_path}")
 
                 x, y = fish.position
-                fish_label.setGeometry(x, y, movie.frameRect().width(), movie.frameRect().height())
+                fish_label.setGeometry(x, y, 200, 200)  # Set the size of the QLabel to 200x200
                 fish_label.show()
                 self.fish_labels.append(fish_label)
 
@@ -213,7 +214,6 @@ def download_gif(google_drive_url):
             for chunk in response.iter_content(chunk_size=128):
                 f.write(chunk)
         
-        print(f"Downloaded GIF to {local_file}")
         return local_file
     except requests.exceptions.RequestException as e:
         print(f"Error downloading GIF: {e}")
