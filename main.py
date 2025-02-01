@@ -13,6 +13,7 @@ MQTT_PORT = 1883
 MQTT_USERNAME = "dc24"
 MQTT_PASSWORD = "kmitl-dc24"
 IMG_URL = "https://drive.google.com/file/d/1iASslBb95ngJvUSawuMpq-erXS1j3ZE4/view?usp=drive_link"
+DESINATION = "Test"
 
 class Fish:
     def __init__(self, name, genesis_pond, remaining_lifetime, gif_path):
@@ -88,7 +89,7 @@ class Pond:
             if fish.remaining_lifetime <= 0:
                 self.remove_fish(fish)
             elif len(self.fish_list) > self.threshold or random.random() < 0.1:
-                self.move_fish(fish, IMG_URL, "Test")
+                self.move_fish(fish, IMG_URL, DESINATION)
 
 class PondUI(QMainWindow):
     def __init__(self, pond):
@@ -114,10 +115,20 @@ class PondUI(QMainWindow):
         self.pond_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         self.layout.addWidget(self.pond_label)
 
+        # Fish counter label
+        self.fish_counter_label = QLabel(f"Number of Fish: {len(self.pond.fish_list)}")
+        self.fish_counter_label.setStyleSheet("font-size: 14px;")
+        self.layout.addWidget(self.fish_counter_label)
+
         # Add Fish button
         self.add_fish_button = QPushButton("Add Fish")
         self.add_fish_button.clicked.connect(self.add_fish)
         self.layout.addWidget(self.add_fish_button)
+
+        # Quit button
+        self.quit_button = QPushButton("Quit")
+        self.quit_button.clicked.connect(self.quit_application)
+        self.layout.addWidget(self.quit_button)
 
         # Fish images
         self.fish_labels = []
@@ -131,6 +142,7 @@ class PondUI(QMainWindow):
         fish = Fish(f"Fish{len(self.pond.fish_list) + 1}", self.pond.name, 15, IMG_URL)
         self.pond.add_fish(fish)
         self.update_fish_display()
+        self.update_fish_counter()
 
     def update_fish_display(self):
         # Clear existing fish labels
@@ -170,6 +182,13 @@ class PondUI(QMainWindow):
         # Only update the display if the number of fish has changed
         if len(self.pond.fish_list) != previous_fish_count:
             self.update_fish_display()
+            self.update_fish_counter()
+
+    def update_fish_counter(self):
+        self.fish_counter_label.setText(f"Number of Fish: {len(self.pond.fish_list)}")
+
+    def quit_application(self):
+        QApplication.quit()  # Quit the application
 
 def convert_drive_link_to_direct_url(drive_link):
     # Extract the file ID from the original Google Drive link
@@ -187,11 +206,9 @@ def download_gif(google_drive_url):
     local_file = f"/tmp/{file_id}.gif"  # Temporary path for downloaded file
 
     try:
-        # Send GET request to download the file
         response = requests.get(download_url, stream=True)
         response.raise_for_status()
 
-        # Write content to local file
         with open(local_file, 'wb') as f:
             for chunk in response.iter_content(chunk_size=128):
                 f.write(chunk)
