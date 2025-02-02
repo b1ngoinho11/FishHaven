@@ -1,7 +1,6 @@
 import json
 import time
 import random
-import requests
 from PyQt5.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget, QPushButton
 from PyQt5.QtGui import QPixmap, QMovie
 from PyQt5.QtCore import Qt, QTimer, QSize
@@ -12,15 +11,13 @@ MQTT_SERVER = "40.90.169.126"
 MQTT_PORT = 1883
 MQTT_USERNAME = "dc24"
 MQTT_PASSWORD = "kmitl-dc24"
-IMG_URL = "https://drive.google.com/file/d/1iASslBb95ngJvUSawuMpq-erXS1j3ZE4/view?usp=drive_link"
-DESINATION = "Test"
+DESTINATION = ["NetLink", "DC_Universe", "Parallel"]
 
 class Fish:
-    def __init__(self, name, genesis_pond, remaining_lifetime, gif_path):
+    def __init__(self, name, genesis_pond, remaining_lifetime):
         self.name = name
         self.genesis_pond = genesis_pond
         self.remaining_lifetime = remaining_lifetime
-        self.gif_path = gif_path
         self.position = (random.randint(0, 550), random.randint(0, 350))  # Initial random position within pond
 
     def age(self):
@@ -47,11 +44,11 @@ class Pond:
     def on_message(self, client, userdata, msg):
         message = json.loads(msg.payload)
         print(f"Received message: {message}")
-        if message["type"] == "hello":
-            print(f"Hello message received from {message['sender']} at {message['timestamp']}")
-        elif message["type"] == "image_sequence":
-            self.add_fish(Fish(f"{message['sender']}'s Fish", message['sender'], message['timestamp'], message['data']['gif_path']))
-
+        
+        if all(key in message for key in ["name", "group_name", "lifetime"]):
+            fish = Fish(name=message["name"], genesis_pond=message["group_name"], remaining_lifetime=message["lifetime"])
+            self.add_fish(fish)
+            
     def announce(self):
         message = {
             "type": "hello",
@@ -70,14 +67,13 @@ class Pond:
         self.fish_list.remove(fish)
         print(f"Removed fish {fish.name} from pond {self.name}")
 
-    def move_fish(self, fish, gif_path, username):
+    def move_fish(self, fish):
+        username = random.choice(DESTINATION)
+        
         message = {
-            "type": "image_sequence",
-            "sender": fish.genesis_pond,
-            "timestamp": fish.remaining_lifetime,
-            "data": {
-                "gif_path": gif_path
-            }
+            "name": fish.name,
+            "group_name": fish.genesis_pond,
+            "lifetime": fish.remaining_lifetime,
         }
         self.client.publish(f"user/{username}", json.dumps(message))
         print(f"Sending fish to {username}: {message}")
@@ -89,7 +85,7 @@ class Pond:
             if fish.remaining_lifetime <= 0:
                 self.remove_fish(fish)
             elif len(self.fish_list) > self.threshold or random.random() < 0.1:
-                self.move_fish(fish, IMG_URL, DESINATION)
+                self.move_fish(fish)
 
 class PondUI(QMainWindow):
     def __init__(self, pond):
@@ -139,7 +135,7 @@ class PondUI(QMainWindow):
         self.timer.start(1000)  # Update every 1 second
 
     def add_fish(self):
-        fish = Fish(f"Fish{len(self.pond.fish_list) + 1}", self.pond.name, 15, IMG_URL)
+        fish = Fish(f"Fish{len(self.pond.fish_list) + 1}", self.pond.name, 15)
         self.pond.add_fish(fish)
         self.update_fish_display()
         self.update_fish_counter()
@@ -152,72 +148,36 @@ class PondUI(QMainWindow):
 
         # Add new fish labels
         for fish in self.pond.fish_list:
-            # Download the GIF file locally
-            gif_local_path = download_gif(fish.gif_path)
+            movie = QMovie(f"{fish.genesis_pond}.gif")  # Load from local file
+            movie.start()
 
-            if gif_local_path:
-                movie = QMovie(gif_local_path)  # Load from local file
-                movie.start()
+            # Set the scaled size of the GIF to 200x200
+            movie.setScaledSize(QSize(200, 200))
 
-                # Set the scaled size of the GIF to 200x200
-                movie.setScaledSize(QSize(200, 200))
+            # Set up fish label
+            fish_label = QLabel(self.pond_image)
+            fish_label.setMovie(movie)
 
-                # Set up fish label
-                fish_label = QLabel(self.pond_image)
-                fish_label.setMovie(movie)
+            # Check if the movie's frame is valid
+            if movie.frameRect().isNull():
+                print("Warning: The movie's frame is null. GIF might not be loaded properly.")
 
-                # Check if the movie's frame is valid
-                if movie.frameRect().isNull():
-                    print("Warning: The movie's frame is null. GIF might not be loaded properly.")
+            x, y = fish.position
+            fish_label.setGeometry(x, y, 200, 200)  # Set the size of the QLabel to 200x200
+            fish_label.show()
+            self.fish_labels.append(fish_label)
 
-                x, y = fish.position
-                fish_label.setGeometry(x, y, 200, 200)  # Set the size of the QLabel to 200x200
-                fish_label.show()
-                self.fish_labels.append(fish_label)
-
-    def update_pond(self):
-        previous_fish_count = len(self.pond.fish_list)
-        
+    def update_pond(self):    
         self.pond.update()
-        
-        # Only update the display if the number of fish has changed
-        if len(self.pond.fish_list) != previous_fish_count:
-            self.update_fish_display()
-            self.update_fish_counter()
+    
+        self.update_fish_display()
+        self.update_fish_counter()
 
     def update_fish_counter(self):
         self.fish_counter_label.setText(f"Number of Fish: {len(self.pond.fish_list)}")
 
     def quit_application(self):
         QApplication.quit()  # Quit the application
-
-def convert_drive_link_to_direct_url(drive_link):
-    # Extract the file ID from the original Google Drive link
-    file_id = drive_link.split('/d/')[1].split('/')[0]
-    
-    # Construct the direct download URL using the file ID
-    direct_url = f"https://drive.google.com/uc?id={file_id}"
-    
-    return direct_url
-
-def download_gif(google_drive_url):
-    direct_url = convert_drive_link_to_direct_url(google_drive_url)
-    file_id = direct_url.split('=')[-1]
-    download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-    local_file = f"/tmp/{file_id}.gif"  # Temporary path for downloaded file
-
-    try:
-        response = requests.get(download_url, stream=True)
-        response.raise_for_status()
-
-        with open(local_file, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=128):
-                f.write(chunk)
-        
-        return local_file
-    except requests.exceptions.RequestException as e:
-        print(f"Error downloading GIF: {e}")
-        return None
 
 if __name__ == "__main__":
     app = QApplication([])
