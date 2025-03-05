@@ -46,10 +46,26 @@ services:
     networks:
       - monitoring
     restart: unless-stopped
+    
+  # Added Redis for replication
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - monitoring
+      - replication
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
 
 networks:
   monitoring:
     driver: bridge
+  replication:
+    driver: bridge
 
 volumes:
   grafana-storage: {}
+  redis-data: {}
