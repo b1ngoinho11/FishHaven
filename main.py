@@ -7,7 +7,7 @@ import threading
 import uuid
 from PyQt5.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QDialog, QTextEdit
 from PyQt5.QtGui import QPixmap, QMovie
-from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal, QObject
+from PyQt5.QtCore import QTimer, QSize, pyqtSignal, QObject
 import paho.mqtt.client as mqtt
 
 # Constants
@@ -711,11 +711,6 @@ class PondUI(QMainWindow):
         self.force_primary_button.clicked.connect(self.force_primary)
         button_layout.addWidget(self.force_primary_button)
         
-        # Simulate Crash button
-        self.crash_button = QPushButton("Simulate Crash")
-        self.crash_button.clicked.connect(self.simulate_crash)
-        button_layout.addWidget(self.crash_button)
-        
         # NEW: Replica Details button
         self.replica_details_button = QPushButton("Replica Details")
         self.replica_details_button.clicked.connect(self.print_replica_details)
@@ -813,28 +808,6 @@ class PondUI(QMainWindow):
             print("---")
         
         print("Forcibly declared this replica as PRIMARY")
-
-    def simulate_crash(self):
-        """Simulate a crash and recovery with primary reassignment"""
-        # If this is the primary node, attempt to reassign
-        if self.replica.is_primary:
-            self.replica.reassign_primary()
-        
-        # Hide UI temporarily
-        self.setWindowTitle(f"Pond Replica {self.replica_id} - CRASHED")
-        self.status_label.setText(f"Pond: {self.replica.name} (Replica {self.replica_id} - CRASHED)")
-        self.status_label.setStyleSheet("font-size: 16px; font-weight: bold; color: red;")
-        
-        # Disable updating for a few seconds
-        self.timer.stop()
-        
-        # Clear fish display
-        for fish_label in self.fish_labels:
-            fish_label.hide()
-        self.fish_labels.clear()
-        
-        # Schedule recovery
-        QTimer.singleShot(5000, self.recover_from_crash)
     
     def print_replica_details(self):
         """Print detailed information about known replicas"""
