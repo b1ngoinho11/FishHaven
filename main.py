@@ -308,9 +308,38 @@ class PondReplica:
                     self.add_fish(fish, external=True)
     
     def process_status_update(self, data):
-        """Enhanced method to handle primary elections and status updates"""
+        """Enhanced method to handle primary elections, status updates, and new replica detection"""
         current_time = time.time()
         
+        # New Replica Detection
+        if data["type"] == "register" or data["type"] == "sync_request":
+            # A new replica has registered or requested sync
+            new_replica_id = data.get("replica_id")
+            
+            # Don't respond to our own registration
+            if new_replica_id != self.replica_id:
+                print(f"New replica detected: {new_replica_id}")
+                
+                # Add to known replicas list
+                self.known_replicas[new_replica_id] = {
+                    'last_seen': current_time,
+                    'is_primary': data.get("is_primary", False)
+                }
+                
+                # If we're primary or have state data, eagerly send full state to the new replica
+                if self.is_primary or len(self.fish_list) > 0:
+                    print(f"Sending eager update to new replica {new_replica_id}")
+                    # Create state update targeted specifically to the new replica
+                    state = {
+                        "type": "full_state",
+                        "replica_id": self.replica_id,
+                        "timestamp": current_time,
+                        "fish": [fish.to_dict() for fish in self.fish_list],
+                        "target_replica": new_replica_id  # Target specific replica
+                    }
+                    self.redis_client.publish(REPLICA_CHANNEL, json.dumps(state))
+        
+        # Rest of the existing process_status_update code...
         # Handle primary reassignment
         if data["type"] == "primary_reassignment":
             old_primary = data.get("old_primary")
